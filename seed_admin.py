@@ -32,7 +32,11 @@ def seed(db: Session) -> None:
         .first()
     )
     if existing:
-        print(f"Admin already exists: {existing.username} ({existing.email})")
+        existing.username = username
+        existing.email = email
+        existing.hashed_password = hash_password(password)
+        db.commit()
+        print(f"Admin synced: {existing.username} ({existing.email})")
         return
 
     admin = User(
