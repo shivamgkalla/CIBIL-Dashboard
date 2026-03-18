@@ -473,10 +473,11 @@ def _rpt_dt_sort_key():
 
 
 def _get_latest_snapshot_id(db: Session) -> int | None:
-    """Return the latest snapshot id from upload history, or None when empty."""
+    """Return the latest successful snapshot id, or None when empty."""
     return (
         db.query(func.max(UploadHistory.id))
         .select_from(UploadHistory)
+        .filter(UploadHistory.status.in_(["success", "partial"]))
         .scalar()
     )
 
