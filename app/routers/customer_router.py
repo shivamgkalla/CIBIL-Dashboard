@@ -2,6 +2,7 @@
 
 from typing import Annotated
 import io
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
@@ -21,6 +22,8 @@ from app.schemas.customer_schema import (
 from app.schemas.chart_schema import ChartPoint
 from app.schemas.customer_timeline_schema import CustomerTimelineResponse
 from app.schemas.customer_summary_schema import CustomerSummaryAnalyticsResponse
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Customers"])
 
@@ -148,6 +151,10 @@ def get_customer_details(
             )
         db.commit()
     except Exception:
+        logger.warning(
+            "Failed to log customer view for user_id=%s, customer_id=%s",
+            current_user.id, customer_id, exc_info=True,
+        )
         db.rollback()
     return results
 
@@ -178,6 +185,10 @@ def get_customer_timeline(
             )
         db.commit()
     except Exception:
+        logger.warning(
+            "Failed to log customer view for user_id=%s, customer_id=%s",
+            current_user.id, customer_id, exc_info=True,
+        )
         db.rollback()
     return timeline
 

@@ -279,7 +279,9 @@ def process_upload_files(
     flush_batches()
 
     status = UploadStatus.SUCCESS
-    if records_failed and records_inserted:
+    if not records_inserted and not records_failed:
+        status = UploadStatus.FAILED
+    elif records_failed and records_inserted:
         status = UploadStatus.PARTIAL
     elif records_failed and not records_inserted:
         status = UploadStatus.FAILED

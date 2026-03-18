@@ -2,7 +2,7 @@
 
 from collections import Counter
 from collections.abc import Generator, Sequence
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import logging
 
 from dateutil.parser import parse
@@ -383,7 +383,7 @@ def _build_timeline_insights(
     # All timestamps assumed UTC (naive date comparison).
     activity_status = (
         "active"
-        if (datetime.utcnow().date() - last_dt.date())
+        if (datetime.now(timezone.utc).date() - last_dt.date())
         <= timedelta(days=ACTIVE_DAYS_THRESHOLD)
         else "inactive"
     )

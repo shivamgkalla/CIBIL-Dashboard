@@ -2,8 +2,12 @@
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+
+from app.db.database import get_db
 
 from app.core.config import get_settings
 from app.routers import auth_router, admin_router, user_router
@@ -43,6 +47,10 @@ app.include_router(saved_filter_router)
 
 
 @app.get("/", tags=["Health"])
-def root():
-    """Health check."""
-    return {"status": "ok", "message": "System is healthy"}
+def root(db: Session = Depends(get_db)):
+    """Health check with database connectivity verification."""
+    try:
+        db.execute(text("SELECT 1"))
+        return {"status": "ok", "message": "System is healthy"}
+    except Exception:
+        return {"status": "degraded", "message": "Database unreachable"}
