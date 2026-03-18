@@ -1,6 +1,6 @@
 """Authentication business logic."""
 
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
@@ -67,6 +67,7 @@ def authenticate_user_with_reason(
         return None, "user_not_found"
     if not verify_password(password, user.hashed_password):
         return None, "invalid_credentials"
+    user.last_login = datetime.now(timezone.utc)
     return user, None
 
 

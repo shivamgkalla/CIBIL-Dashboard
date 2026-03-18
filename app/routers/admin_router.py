@@ -8,12 +8,14 @@ from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.dependencies.role_checker import admin_only
 from app.models.user_model import User
+from app.schemas.admin_activity_schema import AdminActivityResponse
 from app.schemas.dashboard_schema import DashboardResponse
 from app.schemas.customer_view_activity_schema import CustomerViewActivityResponse
 from app.schemas.login_activity_schema import LoginActivityResponse
 from app.schemas.upload_error_schema import UploadErrorResponse
 from app.schemas.user_schema import MessageResponse, UserCreateRequest, UserResponse, UserUpdateRequest
 from app.services import dashboard_service
+from app.services.admin_activity_service import get_admin_activity
 from app.services.customer_view_activity_service import get_customer_view_activity
 from app.services.login_activity_service import get_login_activity
 from app.services.user_service import (
@@ -173,3 +175,22 @@ def remove_user(
 ) -> MessageResponse:
     delete_user_admin(db, user_id, current_admin=current_user)
     return MessageResponse(message="User deleted successfully")
+
+
+@router.get(
+    "/admin-activity",
+    response_model=list[AdminActivityResponse],
+    summary="Admin action audit log (admin only).",
+    responses={
+        200: {"description": "Admin actions ordered by time descending."},
+        403: {"description": "Insufficient permissions"},
+    },
+)
+def admin_action_activity(
+    current_user: AdminUserDep,
+    db: DbSessionDep,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+) -> list[AdminActivityResponse]:
+    """Return admin CRUD action logs for auditing."""
+    return get_admin_activity(db, limit=limit, offset=offset)

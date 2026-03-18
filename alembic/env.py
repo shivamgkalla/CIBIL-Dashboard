@@ -24,6 +24,7 @@ if config.config_file_name is not None:
 from app.db.base import Base
 
 from app.models import (
+    admin_activity_model,
     main_data_model,
     identity_data_model,
     upload_history_model,

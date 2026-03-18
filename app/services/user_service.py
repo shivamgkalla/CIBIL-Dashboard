@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.security import hash_password
 from app.models.user_model import User, UserRole
 from app.schemas.user_schema import RoleEnum, UserCreateRequest, UserUpdateRequest
+from app.services.admin_activity_service import log_admin_action
 from app.services.auth_service import get_user_by_id
 
 
@@ -56,6 +57,14 @@ def create_user_admin(db: Session, data: UserCreateRequest, *, current_admin: Us
         role=UserRole(data.role.value),
     )
     db.add(user)
+    db.flush()
+    log_admin_action(
+        db,
+        admin_id=current_admin.id,
+        action="create_user",
+        target_user_id=user.id,
+        detail=f"Created user '{data.username}' with role '{data.role.value}'",
+    )
     db.commit()
     db.refresh(user)
     return user
@@ -97,6 +106,14 @@ def update_user_admin(
             )
         user.role = UserRole(data.role.value)
 
+    changed = [f for f in ("username", "email", "password", "role") if getattr(data, f) is not None]
+    log_admin_action(
+        db,
+        admin_id=current_admin.id,
+        action="update_user",
+        target_user_id=user.id,
+        detail=f"Updated fields: {', '.join(changed)}" if changed else "No fields changed",
+    )
     db.commit()
     db.refresh(user)
     return user
@@ -114,6 +131,14 @@ def delete_user_admin(db: Session, user_id: int, *, current_admin: User) -> None
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
+    detail = f"Deleted user '{user.username}' (id={user.id}, role={user.role.value})"
     db.delete(user)
+    log_admin_action(
+        db,
+        admin_id=current_admin.id,
+        action="delete_user",
+        target_user_id=user_id,
+        detail=detail,
+    )
     db.commit()
 

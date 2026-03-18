@@ -80,6 +80,7 @@ class UserResponse(BaseModel):
     email: str
     role: RoleEnum
     created_at: datetime
+    last_login: datetime | None = None
 
     model_config = {"from_attributes": True}
 
@@ -92,6 +93,7 @@ class UserResponse(BaseModel):
             email=user.email,
             role=RoleEnum(user.role.value),
             created_at=user.created_at,
+            last_login=user.last_login,
         )
 
 
