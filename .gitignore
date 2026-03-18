@@ -1,0 +1,62 @@
+# ---- Secrets / local config ----
+.env
+.env.*
+!.env.example
+
+# ---- Python / virtualenv ----
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+
+.venv/
+venv/
+ENV/
+env/
+
+pip-wheel-metadata/
+*.egg-info/
+*.egg
+dist/
+build/
+
+# ---- Test / coverage / tooling caches ----
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.tox/
+.nox/
+
+# ---- Logs / runtime artifacts ----
+*.log
+*.pid
+*.out
+
+# ---- Local databases ----
+*.db
+*.sqlite
+*.sqlite3
+
+# ---- OS / editor ----
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+
+.vscode/
+.idea/
+
+# ---- Cursor (optional but recommended) ----
+.cursor/
+
+# ---- Local data exports / scratch files ----
+identity_data.txt
+main_data.txt
+identity_data*.txt
+main_data*.txt
+*.csv
+
