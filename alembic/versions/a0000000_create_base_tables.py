@@ -87,7 +87,7 @@ def upgrade() -> None:
         "identity_data",
         sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
         sa.Column("customer_id", sa.String(50), nullable=True, index=True),
-        sa.Column("pan", sa.String(20), nullable=True, index=True),
+        sa.Column("pan", sa.String(20), nullable=True),
         sa.Column("passport", sa.String(20), nullable=True),
         sa.Column("voter_id", sa.String(30), nullable=True),
         sa.Column("uid", sa.String(20), nullable=True),
