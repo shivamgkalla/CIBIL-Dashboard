@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.dependencies.role_checker import get_current_user, get_current_user_optional
 from app.models.user_model import User
-from app.schemas.user_schema import MessageResponse, TokenResponse, UserRegister, UserLogin, UserResponse
+from app.schemas.user_schema import LoginData, LoginResponse, MessageResponse, RoleEnum, UserRegister, UserLogin, UserResponse
 from app.schemas.password_reset_schema import ForgotPasswordRequest, ResetPasswordRequest
 from app.services.auth_service import (
     create_user,
@@ -75,7 +75,8 @@ def register(
 
 @router.post(
     "/login",
-    response_model=TokenResponse,
+    response_model=LoginResponse,
+    response_model_by_alias=True,
     summary="Login and get JWT",
     responses={
         200: {
@@ -83,8 +84,13 @@ def register(
             "content": {
                 "application/json": {
                     "example": {
-                        "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-                        "token_type": "bearer",
+                        "statusCode": 200,
+                        "message": "User logged in successfully",
+                        "data": {
+                            "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                            "userId": 1,
+                            "role": "user",
+                        },
                     }
                 }
             },
@@ -121,7 +127,15 @@ def login(
             detail="Invalid email or password",
         )
     token = generate_token(user)
-    return TokenResponse(access_token=token)
+    return LoginResponse(
+        status_code=200,
+        message="User logged in successfully",
+        data=LoginData(
+            access_token=token,
+            user_id=user.id,
+            role=RoleEnum(user.role.value),
+        ),
+    )
 
 
 @router.post(

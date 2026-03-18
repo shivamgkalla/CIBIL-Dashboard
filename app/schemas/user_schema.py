@@ -95,22 +95,20 @@ class UserResponse(BaseModel):
         )
 
 
-class TokenResponse(BaseModel):
-    """JWT token response."""
+class LoginData(BaseModel):
+    """Inner data payload for login response."""
 
     access_token: str
-    token_type: str = "bearer"
+    user_id: int = Field(serialization_alias="userId")
+    role: RoleEnum
 
-    model_config = {
-        "json_schema_extra": {
-            "examples": [
-                {
-                    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-                    "token_type": "bearer",
-                }
-            ]
-        }
-    }
+
+class LoginResponse(BaseModel):
+    """Wrapped login response with statusCode, message, and data."""
+
+    status_code: int = Field(serialization_alias="statusCode")
+    message: str
+    data: LoginData
 
 
 class MessageResponse(BaseModel):
