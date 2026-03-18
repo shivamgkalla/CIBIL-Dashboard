@@ -1,12 +1,13 @@
 """One-time script to create the initial admin user.
 
 Usage:
-    python seed_admin.py
+    ADMIN_USERNAME=admin ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD=s3cret python seed_admin.py
 
-Reads DATABASE_URL and SECRET_KEY from environment / .env file.
+Credentials are read from environment variables.
 If an admin already exists the script exits cleanly with no changes.
 """
 
+import os
 import sys
 
 from sqlalchemy.orm import Session
@@ -15,12 +16,16 @@ from app.core.security import hash_password
 from app.db.database import SessionLocal
 from app.models.user_model import User, UserRole
 
-ADMIN_USERNAME = "admin"
-ADMIN_EMAIL = "admin@cibil.local"
-ADMIN_PASSWORD = "admin@123"
-
 
 def seed(db: Session) -> None:
+    username = os.environ.get("ADMIN_USERNAME")
+    email = os.environ.get("ADMIN_EMAIL")
+    password = os.environ.get("ADMIN_PASSWORD")
+
+    if not all([username, email, password]):
+        print("Skipping admin seed — set ADMIN_USERNAME, ADMIN_EMAIL, and ADMIN_PASSWORD env vars to create one.")
+        return
+
     existing = (
         db.query(User)
         .filter((User.role == UserRole.ADMIN))
@@ -31,17 +36,16 @@ def seed(db: Session) -> None:
         return
 
     admin = User(
-        username=ADMIN_USERNAME,
-        email=ADMIN_EMAIL,
-        hashed_password=hash_password(ADMIN_PASSWORD),
+        username=username,
+        email=email,
+        hashed_password=hash_password(password),
         role=UserRole.ADMIN,
     )
     db.add(admin)
     db.commit()
     db.refresh(admin)
     print(f"Admin created: {admin.username} / {admin.email}")
-    print(f"Password: {ADMIN_PASSWORD}")
-    print("IMPORTANT: Change this password immediately after first login.")
+    print("IMPORTANT: Change this password after first login.")
 
 
 if __name__ == "__main__":
