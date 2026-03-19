@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
+from app.core.rate_limit import limiter
 from app.dependencies.role_checker import get_current_user, get_current_user_optional
 from app.models.user_model import User
 from app.schemas.user_schema import LoginData, LoginResponse, MessageResponse, RoleEnum, UserRegister, UserLogin, UserResponse
@@ -96,12 +97,14 @@ def register(
             },
         },
         401: {"description": "Invalid email or password"},
+        429: {"description": "Too many login attempts — try again later"},
     },
 )
+@limiter.limit("5/minute")
 def login(
+    request: Request,
     data: UserLogin,
     db: Annotated[Session, Depends(get_db)],
-    request: Request,
 ):
     """Verify email (or username) and password; returns a JWT access token."""
     ip_address = request.client.host if request.client else None
@@ -142,8 +145,13 @@ def login(
     "/forgot-password",
     response_model=MessageResponse,
     summary="Initiate password reset (email-agnostic).",
+    responses={
+        429: {"description": "Too many reset requests — try again later"},
+    },
 )
+@limiter.limit("3/minute")
 def forgot_password(
+    request: Request,
     data: ForgotPasswordRequest,
     db: Annotated[Session, Depends(get_db)],
 ) -> MessageResponse:

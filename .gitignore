@@ -60,3 +60,6 @@ identity_data*.txt
 main_data*.txt
 *.csv
 
+# ---- Project documentation (local only) ----
+*.pdf
+

@@ -4,12 +4,15 @@ from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
 
 from app.core.config import get_settings
+from app.core.rate_limit import limiter
 from app.routers import auth_router, admin_router, user_router
 from app.routers.upload_router import router as upload_router
 from app.routers.customer_router import router as customer_router
@@ -27,6 +30,10 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+# Attach rate limiter state and register the 429 error handler.
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 settings = get_settings()
 app.add_middleware(
