@@ -350,7 +350,9 @@ def download_customer_report_pdf(
 def get_upload_history(
     db: DbSessionDep,
     current_user: CurrentUserDep,
+    limit: int = Query(default=50, ge=1, le=200, description="Max records to return."),
+    offset: int = Query(default=0, ge=0, description="Number of records to skip."),
 ) -> list[UploadHistoryResponse]:
     """Return upload history rows ordered by uploaded_at descending."""
-    return customer_service.get_upload_history(db)
+    return customer_service.get_upload_history(db, limit=limit, offset=offset)
 

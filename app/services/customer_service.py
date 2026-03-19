@@ -822,10 +822,17 @@ def get_customer_details(db: Session, customer_id: str) -> list[CustomerDetailRe
     return results
 
 
-def get_upload_history(db: Session) -> list[UploadHistoryResponse]:
-    """Return upload history rows ordered by uploaded_at descending."""
-    query = db.query(UploadHistory).order_by(UploadHistory.uploaded_at.desc())
-    rows = query.all()
+def get_upload_history(
+    db: Session, *, limit: int = 50, offset: int = 0
+) -> list[UploadHistoryResponse]:
+    """Return upload history rows ordered by uploaded_at descending with pagination."""
+    rows = (
+        db.query(UploadHistory)
+        .order_by(UploadHistory.uploaded_at.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
     return [UploadHistoryResponse.model_validate(row) for row in rows]
 
 
