@@ -11,6 +11,7 @@ from app.db.base import Base
 class UploadStatus(str):
     """Simple string-based status values for an upload run."""
 
+    PROCESSING = "processing"
     SUCCESS = "success"
     PARTIAL = "partial"
     FAILED = "failed"
@@ -33,4 +34,6 @@ class UploadHistory(Base):
         nullable=False,
     )
     status: Mapped[str] = mapped_column(String(20), default=UploadStatus.SUCCESS, nullable=False)
+    progress_current: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    progress_total: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
 
