@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import time
+from threading import Lock
+
 from sqlalchemy import Float, cast, func
 from sqlalchemy.orm import Session
 
 from app.models.main_data_model import MainData
-from app.models.upload_history_model import UploadHistory
+from app.models.upload_history_model import UploadHistory, UploadStatus
 from app.schemas.dashboard_schema import (
     BankTypeDistribution,
     DashboardResponse,
@@ -14,19 +17,44 @@ from app.schemas.dashboard_schema import (
     RecentUpload,
 )
 
+# In-memory TTL cache for dashboard data.
+_cache: dict[str, DashboardResponse] = {}
+_cache_timestamp: float = 0.0
+_cache_lock = Lock()
+_CACHE_TTL_SECONDS = 60
+
 
 def get_dashboard_data(db: Session) -> DashboardResponse:
-    """Compute aggregated dashboard analytics for the latest snapshot.
+    """Return aggregated dashboard analytics, cached for 60 seconds.
 
     All queries are designed to:
-    * Work off the latest snapshot only.
+    * Work off the latest successful snapshot only.
     * Use aggregate functions and grouping to avoid loading ORM objects.
     * Scale to millions of rows with minimal memory usage.
     """
-    # Determine the latest snapshot id from main_data.
-    latest_snapshot: int | None = db.query(
-        func.max(MainData.snapshot_id)
-    ).scalar()
+    global _cache_timestamp
+
+    with _cache_lock:
+        if "data" in _cache and (time.monotonic() - _cache_timestamp) < _CACHE_TTL_SECONDS:
+            return _cache["data"]
+
+    result = _compute_dashboard_data(db)
+
+    with _cache_lock:
+        _cache["data"] = result
+        _cache_timestamp = time.monotonic()
+
+    return result
+
+
+def _compute_dashboard_data(db: Session) -> DashboardResponse:
+    """Compute aggregated dashboard analytics from the database."""
+    # Determine the latest successful snapshot id.
+    latest_snapshot: int | None = (
+        db.query(func.max(UploadHistory.id))
+        .filter(UploadHistory.status.in_([UploadStatus.SUCCESS, UploadStatus.PARTIAL]))
+        .scalar()
+    )
 
     # If there is no snapshot yet, return an empty but well-formed payload.
     if latest_snapshot is None:
