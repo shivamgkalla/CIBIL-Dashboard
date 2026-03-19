@@ -19,6 +19,7 @@ from fastapi import (
     UploadFile,
     status,
 )
+from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
@@ -37,21 +38,22 @@ from app.services.upload_service import (
 router = APIRouter(prefix="/upload", tags=["Upload"])
 
 
-def _validate_txt_file(file: UploadFile, field_name: str) -> None:
-    """Ensure uploaded file has `.txt` extension as expected by the parser."""
-    filename = file.filename or ""
-    if not filename.lower().endswith(".txt"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"{field_name} must be a .txt file",
-        )
+def _validate_txt_files(files: list[UploadFile]) -> None:
+    """Ensure all uploaded files have `.txt` extension."""
+    for file in files:
+        filename = file.filename or ""
+        if not filename.lower().endswith(".txt"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"'{filename}' must be a .txt file",
+            )
 
 
 @router.post(
     "/files",
     response_model=UploadAcceptedResponse,
     status_code=status.HTTP_202_ACCEPTED,
-    summary="Upload CIBIL main and identity files (async)",
+    summary="Upload CIBIL data files (async, auto-detected)",
     responses={
         202: {
             "description": "Upload accepted — processing in background",
@@ -73,35 +75,34 @@ async def upload_files(
     background_tasks: BackgroundTasks,
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(admin_only)],
-    main_file: UploadFile = File(
-        ..., description="Main CIBIL data file (pipe-separated .txt)"
-    ),
-    identity_file: UploadFile = File(
-        ..., description="Identity CIBIL data file (pipe-separated .txt)"
-    ),
+    files: list[UploadFile] = File(..., description="One or more CIBIL .txt files (auto-detected by header)"),
 ) -> UploadAcceptedResponse:
-    """Accept main + identity CIBIL files and start processing in background.
+    """Accept CIBIL data files and start processing in background.
+
+    Files are auto-detected by their header row and routed to the
+    appropriate table (main_data, identity_data, or inquiry_data).
 
     Returns immediately with an upload_id that can be polled via
     GET /upload/status/{upload_id} to track progress.
     """
-    _validate_txt_file(main_file, "main_file")
-    _validate_txt_file(identity_file, "identity_file")
+    if not files:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="At least one file must be uploaded",
+        )
 
-    # Save files to temp and create a "processing" history record.
-    upload_id, main_path, identity_path = create_upload_record(
+    _validate_txt_files(files)
+
+    upload_id, temp_paths = create_upload_record(
         db,
-        main_file=main_file,
-        identity_file=identity_file,
+        files=files,
         uploaded_by_user_id=current_user.id,
     )
 
-    # Schedule the heavy processing to run after the response is sent.
     background_tasks.add_task(
         process_upload_background,
         upload_id,
-        main_path,
-        identity_path,
+        temp_paths,
     )
 
     return UploadAcceptedResponse(
@@ -159,3 +160,90 @@ def get_upload_status(
         records_inserted=history.records_inserted,
         records_failed=history.records_failed,
     )
+
+
+@router.get("/test", response_class=HTMLResponse, include_in_schema=False)
+def upload_test_page():
+    """Lightweight upload test page with multi-file picker."""
+    return """<!DOCTYPE html>
+<html><head><title>CIBIL Upload Test</title>
+<style>
+  body { font-family: system-ui; max-width: 600px; margin: 60px auto; padding: 0 20px; }
+  h2 { margin-bottom: 4px; }
+  p { color: #666; margin-top: 0; }
+  label { display: block; font-weight: 600; margin: 20px 0 8px; }
+  input[type=text] { width: 100%; padding: 8px; box-sizing: border-box; }
+  input[type=file] { margin: 8px 0; }
+  button { background: #2563eb; color: #fff; border: none; padding: 10px 24px;
+           border-radius: 4px; cursor: pointer; font-size: 14px; margin-top: 16px; }
+  button:disabled { background: #94a3b8; cursor: not-allowed; }
+  #status { margin-top: 20px; padding: 12px; border-radius: 4px; display: none; }
+  .ok { background: #dcfce7; color: #166534; display: block !important; }
+  .err { background: #fee2e2; color: #991b1b; display: block !important; }
+  .info { background: #dbeafe; color: #1e40af; display: block !important; }
+  #progress { margin-top: 12px; display: none; }
+  #progress.show { display: block; }
+  progress { width: 100%; height: 20px; }
+</style></head>
+<body>
+  <h2>CIBIL File Upload</h2>
+  <p>Select one or more .txt files. They are auto-detected by header.</p>
+  <label>JWT Token</label>
+  <input type="text" id="token" placeholder="Paste your Bearer token here">
+  <label>Select Files</label>
+  <input type="file" id="files" multiple accept=".txt">
+  <br>
+  <button id="btn" onclick="doUpload()">Upload</button>
+  <div id="status"></div>
+  <div id="progress">
+    <progress id="bar" value="0" max="100"></progress>
+    <span id="ptext"></span>
+  </div>
+<script>
+async function doUpload() {
+  const token = document.getElementById('token').value.trim();
+  const files = document.getElementById('files').files;
+  const status = document.getElementById('status');
+  const btn = document.getElementById('btn');
+  if (!token) { status.className='err'; status.textContent='Token required'; return; }
+  if (!files.length) { status.className='err'; status.textContent='Select at least one file'; return; }
+  const fd = new FormData();
+  for (const f of files) fd.append('files', f);
+  btn.disabled = true;
+  status.className='info'; status.textContent='Uploading...';
+  try {
+    const r = await fetch('/upload/files', {
+      method: 'POST', body: fd,
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+    const data = await r.json();
+    if (!r.ok) { status.className='err'; status.textContent=JSON.stringify(data); btn.disabled=false; return; }
+    status.className='ok'; status.textContent='Upload accepted (ID: '+data.upload_id+'). Polling...';
+    pollStatus(data.upload_id, token);
+  } catch(e) { status.className='err'; status.textContent=e.message; btn.disabled=false; }
+}
+async function pollStatus(id, token) {
+  const status = document.getElementById('status');
+  const prog = document.getElementById('progress');
+  const bar = document.getElementById('bar');
+  const ptext = document.getElementById('ptext');
+  prog.className = 'show';
+  const poll = setInterval(async () => {
+    try {
+      const r = await fetch('/upload/status/'+id, {
+        headers: { 'Authorization': 'Bearer ' + token }
+      });
+      const d = await r.json();
+      const pct = d.progress_total ? Math.round(d.progress_current/d.progress_total*100) : 0;
+      bar.value = pct; ptext.textContent = pct+'% ('+d.records_inserted+' inserted, '+d.records_failed+' failed)';
+      if (d.status !== 'processing') {
+        clearInterval(poll);
+        bar.value = 100;
+        status.className = d.status === 'success' ? 'ok' : d.status === 'partial' ? 'info' : 'err';
+        status.textContent = 'Done: ' + d.status + ' | Inserted: '+d.records_inserted+' | Failed: '+d.records_failed;
+        document.getElementById('btn').disabled = false;
+      }
+    } catch(e) { clearInterval(poll); status.className='err'; status.textContent=e.message; }
+  }, 2000);
+}
+</script></body></html>"""

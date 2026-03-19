@@ -25,6 +25,10 @@ class IdentityData(Base):
     uid: Mapped[str | None] = mapped_column(String(20), nullable=True)
     ration_card: Mapped[str | None] = mapped_column(Text, nullable=True)
     driving_license: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    phone: Mapped[str | None] = mapped_column(String(20), index=True, nullable=True)
+    email: Mapped[str | None] = mapped_column(Text, nullable=True)
+    address: Mapped[str | None] = mapped_column(Text, nullable=True)
+    pincode: Mapped[str | None] = mapped_column(String(10), nullable=True)
     snapshot_id: Mapped[int | None] = mapped_column(index=True, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

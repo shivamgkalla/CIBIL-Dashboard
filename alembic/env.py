@@ -27,6 +27,7 @@ from app.models import (
     admin_activity_model,
     main_data_model,
     identity_data_model,
+    inquiry_data_model,
     upload_history_model,
     upload_error_model,
     user_model,

@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Integer, String, func
+from sqlalchemy import DateTime, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -23,8 +23,9 @@ class UploadHistory(Base):
     __tablename__ = "upload_history"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True, autoincrement=True)
-    main_filename: Mapped[str] = mapped_column(String(255), nullable=False)
-    identity_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    main_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    identity_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    filenames: Mapped[str | None] = mapped_column(Text, nullable=True)
     records_inserted: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     records_failed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     uploaded_by: Mapped[int | None] = mapped_column(index=True, nullable=True)

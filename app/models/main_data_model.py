@@ -27,6 +27,10 @@ class MainData(Base):
     occup_status_cd: Mapped[str | None] = mapped_column(String(10), nullable=True)
     rpt_dt: Mapped[str | None] = mapped_column(String(10), nullable=True)
     bank_type: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    credit_score: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    full_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    dob: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    gender: Mapped[str | None] = mapped_column(String(10), nullable=True)
     snapshot_id: Mapped[int | None] = mapped_column(index=True, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

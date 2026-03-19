@@ -15,6 +15,7 @@ from app.db.database import get_db, SessionLocal
 from app.core.config import get_settings
 from app.core.rate_limit import limiter
 from app.models.identity_data_model import IdentityData
+from app.models.inquiry_data_model import InquiryData
 from app.models.main_data_model import MainData
 from app.models.upload_error_model import UploadError
 from app.models.upload_history_model import UploadHistory, UploadStatus
@@ -44,14 +45,15 @@ async def lifespan(app: FastAPI):
             # Delete orphan data rows inserted before the crash.
             deleted_main = db.query(MainData).filter(MainData.snapshot_id == sid).delete()
             deleted_id = db.query(IdentityData).filter(IdentityData.snapshot_id == sid).delete()
+            deleted_inq = db.query(InquiryData).filter(InquiryData.snapshot_id == sid).delete()
             deleted_err = db.query(UploadError).filter(UploadError.upload_id == sid).delete()
             upload.status = UploadStatus.FAILED
             upload.records_inserted = 0
             upload.records_failed = 0
             logger.warning(
                 "Cleaned up stuck upload_id=%s on startup: "
-                "deleted %d main, %d identity, %d error rows",
-                sid, deleted_main, deleted_id, deleted_err,
+                "deleted %d main, %d identity, %d inquiry, %d error rows",
+                sid, deleted_main, deleted_id, deleted_inq, deleted_err,
             )
         if stuck:
             db.commit()

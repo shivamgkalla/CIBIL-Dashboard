@@ -85,8 +85,9 @@ class UploadHistoryResponse(BaseModel):
     """Upload history row representation."""
 
     id: int
-    main_filename: str
-    identity_filename: str
+    main_filename: str | None = None
+    identity_filename: str | None = None
+    filenames: str | None = None
     records_inserted: int
     records_failed: int
     uploaded_by: int | None = None
