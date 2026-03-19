@@ -1,5 +1,6 @@
 """FastAPI application entry point."""
 
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI
@@ -9,20 +10,41 @@ from slowapi.errors import RateLimitExceeded
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.db.database import get_db
+from app.db.database import get_db, SessionLocal
 
 from app.core.config import get_settings
 from app.core.rate_limit import limiter
+from app.models.upload_history_model import UploadHistory, UploadStatus
 from app.routers import auth_router, admin_router, user_router
 from app.routers.upload_router import router as upload_router
 from app.routers.customer_router import router as customer_router
 from app.routers.saved_filter_router import router as saved_filter_router
 from app.routers.chart_router import router as chart_router
 
+logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan (startup/shutdown)."""
+    # Mark any uploads stuck in "processing" as failed — they were interrupted
+    # by a dyno restart or OOM kill and will never complete.
+    db = SessionLocal()
+    try:
+        stuck = (
+            db.query(UploadHistory)
+            .filter(UploadHistory.status == UploadStatus.PROCESSING)
+            .all()
+        )
+        for upload in stuck:
+            upload.status = UploadStatus.FAILED
+            logger.warning("Marked stuck upload_id=%s as FAILED on startup", upload.id)
+        if stuck:
+            db.commit()
+    except Exception:
+        logger.exception("Failed to clean up stuck uploads on startup")
+    finally:
+        db.close()
     yield
 
 
