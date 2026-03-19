@@ -574,6 +574,129 @@ def get_bank_trend(db: Session, customer_id: str) -> list[ChartPoint]:
     return points
 
 
+# ---------------------------------------------------------------------------
+# Global (aggregated) chart data — Section 3.5 "filter charts by global filters"
+# ---------------------------------------------------------------------------
+
+
+def get_global_income_trend(
+    db: Session,
+    *,
+    bank_type: str | None = None,
+    occup_status_cd: str | None = None,
+    income_min: int | None = None,
+    income_max: int | None = None,
+    rpt_dt_from: str | None = None,
+    rpt_dt_to: str | None = None,
+) -> list[ChartPoint]:
+    """Return average income grouped by RPT_DT across all customers in the latest snapshot.
+
+    Accepts the same global filters as the search endpoint so the frontend
+    can apply filters and see the chart update accordingly.
+    """
+    latest_snapshot = _get_latest_snapshot_id(db)
+    if latest_snapshot is None:
+        return []
+
+    # Base query: average income per report date across the latest snapshot.
+    query = (
+        db.query(
+            MainData.rpt_dt,
+            func.round(func.avg(cast(MainData.income, Integer)), 2).label("avg_income"),
+        )
+        .filter(
+            MainData.snapshot_id == latest_snapshot,
+            MainData.income.isnot(None),
+            MainData.income != "",
+            MainData.rpt_dt.isnot(None),
+            MainData.rpt_dt != "",
+        )
+    )
+
+    # Apply the same filters the search/export endpoints use (minus customer_id,
+    # pan, acct_key which are per-customer identifiers, not global filters).
+    if bank_type:
+        query = query.filter(MainData.bank_type == bank_type)
+    if occup_status_cd:
+        query = query.filter(MainData.occup_status_cd == occup_status_cd)
+    if income_min is not None:
+        query = query.filter(cast(MainData.income, Integer) >= income_min)
+    if income_max is not None:
+        query = query.filter(cast(MainData.income, Integer) <= income_max)
+    if rpt_dt_from:
+        query = query.filter(MainData.rpt_dt >= rpt_dt_from)
+    if rpt_dt_to:
+        query = query.filter(MainData.rpt_dt <= rpt_dt_to)
+
+    rows = (
+        query
+        .group_by(MainData.rpt_dt)
+        .order_by(_rpt_dt_sort_key().asc())
+        .all()
+    )
+
+    return [
+        ChartPoint(x=rpt_dt, y=float(avg_income))
+        for rpt_dt, avg_income in rows
+        if avg_income is not None
+    ]
+
+
+def get_global_bank_distribution(
+    db: Session,
+    *,
+    occup_status_cd: str | None = None,
+    income_min: int | None = None,
+    income_max: int | None = None,
+    rpt_dt_from: str | None = None,
+    rpt_dt_to: str | None = None,
+) -> list[ChartPoint]:
+    """Return bank_type distribution (count per type) across the latest snapshot.
+
+    Useful for a pie/bar chart showing how many records fall under each
+    bank type, with optional global filters applied.
+    """
+    latest_snapshot = _get_latest_snapshot_id(db)
+    if latest_snapshot is None:
+        return []
+
+    query = (
+        db.query(
+            MainData.bank_type,
+            func.count(MainData.id).label("count"),
+        )
+        .filter(
+            MainData.snapshot_id == latest_snapshot,
+            MainData.bank_type.isnot(None),
+            MainData.bank_type != "",
+        )
+    )
+
+    # Apply global filters.
+    if occup_status_cd:
+        query = query.filter(MainData.occup_status_cd == occup_status_cd)
+    if income_min is not None:
+        query = query.filter(cast(MainData.income, Integer) >= income_min)
+    if income_max is not None:
+        query = query.filter(cast(MainData.income, Integer) <= income_max)
+    if rpt_dt_from:
+        query = query.filter(MainData.rpt_dt >= rpt_dt_from)
+    if rpt_dt_to:
+        query = query.filter(MainData.rpt_dt <= rpt_dt_to)
+
+    rows = (
+        query
+        .group_by(MainData.bank_type)
+        .order_by(func.count(MainData.id).desc())
+        .all()
+    )
+
+    return [
+        ChartPoint(x=bank_type, y=count)
+        for bank_type, count in rows
+    ]
+
+
 def search_customers(
     db: Session,
     customer_id: str | None,

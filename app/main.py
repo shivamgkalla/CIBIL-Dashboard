@@ -17,6 +17,7 @@ from app.routers import auth_router, admin_router, user_router
 from app.routers.upload_router import router as upload_router
 from app.routers.customer_router import router as customer_router
 from app.routers.saved_filter_router import router as saved_filter_router
+from app.routers.chart_router import router as chart_router
 
 
 @asynccontextmanager
@@ -51,6 +52,7 @@ app.include_router(user_router.router)
 app.include_router(upload_router)
 app.include_router(customer_router)
 app.include_router(saved_filter_router)
+app.include_router(chart_router)
 
 
 @app.get("/", tags=["Health"])
