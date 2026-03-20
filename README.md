@@ -149,15 +149,6 @@ The upload endpoint accepts N pipe-separated `.txt` files and auto-classifies ea
 
 Upload is processed asynchronously in background. Poll `/upload/status/{id}` for progress.
 
-### Generating Test Data
-
-```bash
-python scripts/generate_test_data.py          # outputs to ./test_data/
-python scripts/generate_test_data.py /tmp/out  # custom output dir
-```
-
-Generates 8 files (5 customers) covering every file type above.
-
 ---
 
 ## Database Schema
