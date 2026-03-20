@@ -266,8 +266,6 @@ alembic/
 ├── env.py
 └── script.py.mako
 docs/                       # Detailed engineering documentation
-scripts/
-└── generate_test_data.py   # Test data generator (8 file types)
 seed_admin.py               # Initial admin user seeder
 render.yaml                 # Render deployment blueprint
 ```
