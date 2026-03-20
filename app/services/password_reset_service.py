@@ -102,28 +102,30 @@ def _send_reset_email(to_email: str, reset_link: str) -> None:
         log.exception("Failed to send password reset email", extra={"to": to_email})
 
 
-def request_password_reset(db: Session, email: str) -> None:
+def request_password_reset(db: Session, email: str) -> str | None:
     """
     If a user exists for the email, create a reset token and deliver the reset link.
 
-    In DEBUG mode the link is printed to the terminal. In production it is sent
-    via SMTP. The token is never returned or exposed via the API.
+    In dev mode (ENV=dev) the reset link is returned so it can be shown in the
+    API response for demo purposes. In production (ENV=prod) the link is sent
+    via SMTP and never exposed in the response.
+
+    Returns the reset link in dev mode, None otherwise.
     """
     user = db.query(User).filter(User.email == email).first()
     if not user:
-        return
+        return None
 
     raw_token = create_reset_token(db, user)
     link = _build_reset_link(raw_token)
     settings = get_settings()
 
-    if settings.DEBUG:
-        print("\n" + "=" * 60)
-        print("[DEV] Password reset link (do not use in production):")
-        print(link)
-        print("=" * 60 + "\n")
+    if settings.ENV.value == "dev":
+        log.info("[DEV] Password reset link generated (demo mode)")
+        return link
 
     _send_reset_email(user.email, link)
+    return None
 
 
 def reset_password_with_token(

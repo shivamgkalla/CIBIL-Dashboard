@@ -10,7 +10,7 @@ from app.core.rate_limit import limiter
 from app.dependencies.role_checker import get_current_user, get_current_user_optional
 from app.models.user_model import User
 from app.schemas.user_schema import LoginData, LoginResponse, MessageResponse, RoleEnum, UserRegister, UserLogin, UserResponse
-from app.schemas.password_reset_schema import ForgotPasswordRequest, ResetPasswordRequest
+from app.schemas.password_reset_schema import ForgotPasswordRequest, ForgotPasswordResponse, ResetPasswordRequest
 from app.services.auth_service import (
     create_user,
     authenticate_user_with_reason,
@@ -143,7 +143,7 @@ def login(
 
 @router.post(
     "/forgot-password",
-    response_model=MessageResponse,
+    response_model=ForgotPasswordResponse,
     summary="Initiate password reset (email-agnostic).",
     responses={
         429: {"description": "Too many reset requests — try again later"},
@@ -154,15 +154,18 @@ def forgot_password(
     request: Request,
     data: ForgotPasswordRequest,
     db: Annotated[Session, Depends(get_db)],
-) -> MessageResponse:
+) -> ForgotPasswordResponse:
     """
     Create a password reset token if the account exists.
 
-    Response is identical regardless of whether the email is registered.
+    In **dev mode** (`ENV=dev`), the response includes a `demo_reset_link` so the
+    full reset flow can be demonstrated without email delivery.
+    In **production** (`ENV=prod`), the link is sent via email and never exposed here.
     """
-    request_password_reset(db, data.email)
-    return MessageResponse(
-        message="If the account exists, a password reset link will be sent."
+    reset_link = request_password_reset(db, data.email)
+    return ForgotPasswordResponse(
+        message="If the account exists, a password reset link will be sent.",
+        demo_reset_link=reset_link,
     )
 
 

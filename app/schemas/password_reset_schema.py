@@ -9,6 +9,17 @@ class ForgotPasswordRequest(BaseModel):
     email: EmailStr = Field(..., examples=["user@example.com"])
 
 
+class ForgotPasswordResponse(BaseModel):
+    """Response for forgot-password. Includes demo_reset_link only in dev mode."""
+
+    message: str
+    demo_reset_link: str | None = Field(
+        default=None,
+        description="Reset link returned only in demo mode (ENV=dev). "
+        "Will be None in production when email delivery is configured.",
+    )
+
+
 class ResetPasswordRequest(BaseModel):
     """Request body for completing password reset."""
 
