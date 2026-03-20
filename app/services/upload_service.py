@@ -278,207 +278,230 @@ def _process_files_multi(
         logger.info("Classified %s as %s", path.name, file_type)
 
     account_files = classified.get(FILE_TYPE_ACCOUNT, [])
-    if not account_files:
-        logger.error("No account (main) file found among uploaded files")
-        history.status = UploadStatus.FAILED
-        history.records_inserted = 0
-        history.records_failed = 0
-        db.commit()
-        return
 
-    # --- Step 2: Count total rows from account file(s) for progress ---
-    total_rows = sum(_count_data_rows(p) for p in account_files)
+    # --- Step 2: Count total rows for progress tracking ---
+    # When account files are present, progress is driven by account rows
+    # (the streaming loop). Otherwise, count all files.
+    if account_files:
+        total_rows = sum(_count_data_rows(p) for p in account_files)
+    else:
+        total_rows = sum(_count_data_rows(p) for p in temp_paths)
     history.progress_total = total_rows
     db.commit()
 
-    # --- Step 3: Build customer-level lookups from all non-account files ---
-    identity_docs_lookup: dict[str, dict[str, str]] = {}
-    credit_score_lookup: dict[str, dict[str, str]] = {}
-    personal_lookup: dict[str, dict[str, str]] = {}
-    phone_lookup: dict[str, dict[str, str]] = {}
-    email_lookup: dict[str, dict[str, str]] = {}
-    address_lookup: dict[str, dict[str, str]] = {}
+    # --- Step 3: Process non-account files ---
+    records_inserted = 0
 
-    for file_type, paths in classified.items():
-        for path in paths:
-            if file_type == FILE_TYPE_IDENTITY_DOCS:
-                identity_docs_lookup = _merge_lookups(identity_docs_lookup, _build_customer_lookup(path))
-            elif file_type == FILE_TYPE_CREDIT_SCORE:
-                credit_score_lookup = _merge_lookups(credit_score_lookup, _build_customer_lookup(path))
-            elif file_type == FILE_TYPE_PERSONAL:
-                personal_lookup = _merge_lookups(personal_lookup, _build_customer_lookup(path))
-            elif file_type == FILE_TYPE_PHONE:
-                phone_lookup = _merge_lookups(phone_lookup, _build_customer_lookup(path))
-            elif file_type == FILE_TYPE_EMAIL:
-                email_lookup = _merge_lookups(email_lookup, _build_customer_lookup(path))
-            elif file_type == FILE_TYPE_ADDRESS:
-                address_lookup = _merge_lookups(address_lookup, _build_customer_lookup(path))
+    # Inquiry files always insert directly (not part of account enrichment)
+    for inq_path in classified.get(FILE_TYPE_INQUIRY, []):
+        records_inserted += _insert_inquiry_data(db, inq_path, snapshot_id)
 
-    # Merge all identity-category lookups into one master identity map
-    identity_map = _merge_lookups(
-        identity_docs_lookup, personal_lookup, phone_lookup, email_lookup, address_lookup
-    )
+    if not account_files:
+        # No account file — insert every other file type directly into
+        # its own table.  When account files ARE present, credit_score /
+        # personal / identity files are handled via the enrichment path
+        # (Step 4-5) to avoid duplicate rows.
 
-    # --- Step 4: Process inquiry files (insert directly) ---
-    inquiry_files = classified.get(FILE_TYPE_INQUIRY, [])
-    for inq_path in inquiry_files:
-        _insert_inquiry_data(db, inq_path, snapshot_id)
+        # Credit score → sparse main_data rows (customer_id + credit_score)
+        for cs_path in classified.get(FILE_TYPE_CREDIT_SCORE, []):
+            records_inserted += _insert_credit_score_data(db, cs_path, snapshot_id)
+
+        # Personal → sparse main_data rows (customer_id + name/dob/gender)
+        for p_path in classified.get(FILE_TYPE_PERSONAL, []):
+            records_inserted += _insert_personal_data(db, p_path, snapshot_id)
+
+        # Identity-category files → identity_data
+        identity_types = [
+            FILE_TYPE_IDENTITY_DOCS, FILE_TYPE_PHONE, FILE_TYPE_EMAIL, FILE_TYPE_ADDRESS,
+        ]
+        for id_type in identity_types:
+            for id_path in classified.get(id_type, []):
+                records_inserted += _insert_identity_data_standalone(db, id_path, snapshot_id)
+
+    # --- Step 4: If account files present, build lookups and stream ---
+    if account_files:
+        # Build customer-level lookups for enriching account rows
+        identity_docs_lookup: dict[str, dict[str, str]] = {}
+        credit_score_lookup: dict[str, dict[str, str]] = {}
+        personal_lookup: dict[str, dict[str, str]] = {}
+        phone_lookup: dict[str, dict[str, str]] = {}
+        email_lookup: dict[str, dict[str, str]] = {}
+        address_lookup: dict[str, dict[str, str]] = {}
+
+        for file_type, paths in classified.items():
+            for path in paths:
+                if file_type == FILE_TYPE_IDENTITY_DOCS:
+                    identity_docs_lookup = _merge_lookups(identity_docs_lookup, _build_customer_lookup(path))
+                elif file_type == FILE_TYPE_CREDIT_SCORE:
+                    credit_score_lookup = _merge_lookups(credit_score_lookup, _build_customer_lookup(path))
+                elif file_type == FILE_TYPE_PERSONAL:
+                    personal_lookup = _merge_lookups(personal_lookup, _build_customer_lookup(path))
+                elif file_type == FILE_TYPE_PHONE:
+                    phone_lookup = _merge_lookups(phone_lookup, _build_customer_lookup(path))
+                elif file_type == FILE_TYPE_EMAIL:
+                    email_lookup = _merge_lookups(email_lookup, _build_customer_lookup(path))
+                elif file_type == FILE_TYPE_ADDRESS:
+                    address_lookup = _merge_lookups(address_lookup, _build_customer_lookup(path))
+
+        identity_map = _merge_lookups(
+            identity_docs_lookup, personal_lookup, phone_lookup, email_lookup, address_lookup
+        )
 
     # --- Step 5: Stream account file(s) and process in batches ---
-    records_inserted = 0
     records_failed = 0
     rows_processed = 0
 
-    main_batch: list[dict[str, object]] = []
-    identity_batch: list[dict[str, object]] = []
-    main_batch_row_numbers: list[int] = []
-    error_batch: list[dict[str, object]] = []
+    if account_files:
+        main_batch: list[dict[str, object]] = []
+        identity_batch: list[dict[str, object]] = []
+        main_batch_row_numbers: list[int] = []
+        error_batch: list[dict[str, object]] = []
 
-    def flush_batches() -> None:
-        nonlocal records_failed, records_inserted
+        def flush_batches() -> None:
+            nonlocal records_failed, records_inserted
 
-        if not main_batch and not identity_batch and not error_batch:
-            return
+            if not main_batch and not identity_batch and not error_batch:
+                return
 
-        try:
-            with db.begin_nested():
-                if main_batch:
-                    db.bulk_insert_mappings(MainData, main_batch)
-                if identity_batch:
-                    db.bulk_insert_mappings(IdentityData, identity_batch)
+            try:
+                with db.begin_nested():
+                    if main_batch:
+                        db.bulk_insert_mappings(MainData, main_batch)
+                    if identity_batch:
+                        db.bulk_insert_mappings(IdentityData, identity_batch)
+                    if error_batch:
+                        db.bulk_insert_mappings(UploadError, error_batch)
+                    db.flush()
+                    records_inserted += len(main_batch)
+            except Exception as e:
+                failed_rows = len(main_batch)
+                if failed_rows:
+                    batch_error_message = f"{type(e).__name__}: {e}"
+                    for row_number, raw in zip(main_batch_row_numbers, main_batch, strict=False):
+                        error_batch.append(
+                            {
+                                "upload_id": snapshot_id,
+                                "row_number": row_number,
+                                "error_message": batch_error_message,
+                                "raw_data": _safe_raw_data(raw),
+                            }
+                        )
+                logger.exception(
+                    "Bulk insert failed for batch of %d main rows.",
+                    failed_rows,
+                )
                 if error_batch:
-                    db.bulk_insert_mappings(UploadError, error_batch)
-                db.flush()
-                records_inserted += len(main_batch)
-        except Exception as e:
-            failed_rows = len(main_batch)
-            if failed_rows:
-                batch_error_message = f"{type(e).__name__}: {e}"
-                for row_number, raw in zip(main_batch_row_numbers, main_batch, strict=False):
-                    error_batch.append(
+                    try:
+                        with db.begin_nested():
+                            db.bulk_insert_mappings(UploadError, error_batch)
+                            db.flush()
+                    except Exception:
+                        logger.exception(
+                            "Failed to persist error rows for snapshot_id=%s", snapshot_id
+                        )
+            finally:
+                main_batch.clear()
+                identity_batch.clear()
+                main_batch_row_numbers.clear()
+                error_batch.clear()
+
+        def update_progress() -> None:
+            try:
+                history.progress_current = rows_processed
+                history.records_inserted = records_inserted
+                history.records_failed = records_failed
+                db.commit()
+                db.refresh(history)
+            except Exception:
+                logger.warning(
+                    "Failed to update progress for upload_id=%s", upload_id, exc_info=True
+                )
+
+        for account_path in account_files:
+            reader = csv.DictReader(_iter_decoded_lines_from_path(account_path), delimiter="|")
+
+            for row_number, row in enumerate(reader, start=2):
+                try:
+                    customer_id = _get_customer_id(row)
+                    if not customer_id:
+                        records_failed += 1
+                        error_batch.append(
+                            {
+                                "upload_id": snapshot_id,
+                                "row_number": row_number,
+                                "error_message": "Missing CUSTOMER_ID",
+                                "raw_data": _safe_raw_data(row),
+                            }
+                        )
+                        if len(error_batch) >= BATCH_SIZE:
+                            flush_batches()
+                        rows_processed += 1
+                        if rows_processed % PROGRESS_UPDATE_INTERVAL == 0:
+                            update_progress()
+                        continue
+
+                    # Enrich from customer-level lookups
+                    score_row = credit_score_lookup.get(customer_id, {})
+                    personal_row = personal_lookup.get(customer_id, {})
+                    identity_row = identity_map.get(customer_id)
+
+                    main_batch.append(
                         {
-                            "upload_id": snapshot_id,
-                            "row_number": row_number,
-                            "error_message": batch_error_message,
-                            "raw_data": _safe_raw_data(raw),
+                            "acct_key": _normalize_empty(row.get("ACCT_KEY")),
+                            "customer_id": _normalize_empty(customer_id),
+                            "income": _normalize_empty(row.get("INCOME")),
+                            "income_freq": _normalize_empty(row.get("INCOME_FREQ")),
+                            "occup_status_cd": _normalize_empty(row.get("OCCUP_STATUS_CD")),
+                            "rpt_dt": _normalize_empty(row.get("RPT_DT")),
+                            "bank_type": _normalize_empty(row.get("BANK_TYPE")),
+                            "credit_score": _normalize_empty(score_row.get("SCORE_V3")),
+                            "full_name": _normalize_empty(personal_row.get("FULL_NAME")),
+                            "dob": _normalize_empty(personal_row.get("DOB")),
+                            "gender": _normalize_empty(personal_row.get("GENDER")),
+                            "snapshot_id": snapshot_id,
                         }
                     )
-            logger.exception(
-                "Bulk insert failed for batch of %d main rows.",
-                failed_rows,
-            )
-            if error_batch:
-                try:
-                    with db.begin_nested():
-                        db.bulk_insert_mappings(UploadError, error_batch)
-                        db.flush()
-                except Exception:
-                    logger.exception(
-                        "Failed to persist error rows for snapshot_id=%s", snapshot_id
-                    )
-        finally:
-            main_batch.clear()
-            identity_batch.clear()
-            main_batch_row_numbers.clear()
-            error_batch.clear()
+                    main_batch_row_numbers.append(row_number)
 
-    def update_progress() -> None:
-        try:
-            history.progress_current = rows_processed
-            history.records_inserted = records_inserted
-            history.records_failed = records_failed
-            db.commit()
-            db.refresh(history)
-        except Exception:
-            logger.warning(
-                "Failed to update progress for upload_id=%s", upload_id, exc_info=True
-            )
+                    if identity_row:
+                        identity_batch.append(
+                            {
+                                "customer_id": _normalize_empty(customer_id),
+                                "pan": _normalize_empty(identity_row.get("PAN")),
+                                "passport": _normalize_empty(identity_row.get("PASSPORT")),
+                                "voter_id": _normalize_empty(identity_row.get("VOTER_ID")),
+                                "uid": _normalize_empty(identity_row.get("UID")),
+                                "ration_card": _normalize_empty(identity_row.get("RATION_CARD")),
+                                "driving_license": _normalize_empty(identity_row.get("DRIVING_LICENSE")),
+                                "phone": _normalize_empty(identity_row.get("PHONE")),
+                                "email": _normalize_empty(identity_row.get("EMAIL")),
+                                "address": _normalize_empty(identity_row.get("ADDRESS")),
+                                "pincode": _normalize_empty(identity_row.get("PINCODE")),
+                                "snapshot_id": snapshot_id,
+                            }
+                        )
 
-    for account_path in account_files:
-        reader = csv.DictReader(_iter_decoded_lines_from_path(account_path), delimiter="|")
-
-        for row_number, row in enumerate(reader, start=2):
-            try:
-                customer_id = _get_customer_id(row)
-                if not customer_id:
+                    if len(main_batch) >= BATCH_SIZE:
+                        flush_batches()
+                except Exception as e:
                     records_failed += 1
                     error_batch.append(
                         {
                             "upload_id": snapshot_id,
                             "row_number": row_number,
-                            "error_message": "Missing CUSTOMER_ID",
+                            "error_message": f"{type(e).__name__}: {e}",
                             "raw_data": _safe_raw_data(row),
                         }
                     )
                     if len(error_batch) >= BATCH_SIZE:
                         flush_batches()
-                    rows_processed += 1
-                    if rows_processed % PROGRESS_UPDATE_INTERVAL == 0:
-                        update_progress()
-                    continue
 
-                # Enrich from customer-level lookups
-                score_row = credit_score_lookup.get(customer_id, {})
-                personal_row = personal_lookup.get(customer_id, {})
-                identity_row = identity_map.get(customer_id)
+                rows_processed += 1
+                if rows_processed % PROGRESS_UPDATE_INTERVAL == 0:
+                    update_progress()
 
-                main_batch.append(
-                    {
-                        "acct_key": _normalize_empty(row.get("ACCT_KEY")),
-                        "customer_id": _normalize_empty(customer_id),
-                        "income": _normalize_empty(row.get("INCOME")),
-                        "income_freq": _normalize_empty(row.get("INCOME_FREQ")),
-                        "occup_status_cd": _normalize_empty(row.get("OCCUP_STATUS_CD")),
-                        "rpt_dt": _normalize_empty(row.get("RPT_DT")),
-                        "bank_type": _normalize_empty(row.get("BANK_TYPE")),
-                        "credit_score": _normalize_empty(score_row.get("SCORE_V3")),
-                        "full_name": _normalize_empty(personal_row.get("FULL_NAME")),
-                        "dob": _normalize_empty(personal_row.get("DOB")),
-                        "gender": _normalize_empty(personal_row.get("GENDER")),
-                        "snapshot_id": snapshot_id,
-                    }
-                )
-                main_batch_row_numbers.append(row_number)
-
-                if identity_row:
-                    identity_batch.append(
-                        {
-                            "customer_id": _normalize_empty(customer_id),
-                            "pan": _normalize_empty(identity_row.get("PAN")),
-                            "passport": _normalize_empty(identity_row.get("PASSPORT")),
-                            "voter_id": _normalize_empty(identity_row.get("VOTER_ID")),
-                            "uid": _normalize_empty(identity_row.get("UID")),
-                            "ration_card": _normalize_empty(identity_row.get("RATION_CARD")),
-                            "driving_license": _normalize_empty(identity_row.get("DRIVING_LICENSE")),
-                            "phone": _normalize_empty(identity_row.get("PHONE")),
-                            "email": _normalize_empty(identity_row.get("EMAIL")),
-                            "address": _normalize_empty(identity_row.get("ADDRESS")),
-                            "pincode": _normalize_empty(identity_row.get("PINCODE")),
-                            "snapshot_id": snapshot_id,
-                        }
-                    )
-
-                if len(main_batch) >= BATCH_SIZE:
-                    flush_batches()
-            except Exception as e:
-                records_failed += 1
-                error_batch.append(
-                    {
-                        "upload_id": snapshot_id,
-                        "row_number": row_number,
-                        "error_message": f"{type(e).__name__}: {e}",
-                        "raw_data": _safe_raw_data(row),
-                    }
-                )
-                if len(error_batch) >= BATCH_SIZE:
-                    flush_batches()
-
-            rows_processed += 1
-            if rows_processed % PROGRESS_UPDATE_INTERVAL == 0:
-                update_progress()
-
-    # Flush remaining buffered data
-    flush_batches()
+        # Flush remaining buffered data
+        flush_batches()
 
     # --- Step 6: Determine final status ---
     status = UploadStatus.SUCCESS
@@ -491,19 +514,164 @@ def _process_files_multi(
 
     history.records_inserted = records_inserted
     history.records_failed = records_failed
-    history.progress_current = rows_processed
+    history.progress_current = rows_processed if account_files else total_rows
     history.status = status
     db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Standalone file insertion (no account file required)
+# ---------------------------------------------------------------------------
+
+def _insert_credit_score_data(db: Session, path: Path, snapshot_id: int) -> int:
+    """Read a credit-score file and insert sparse main_data rows."""
+    reader = csv.DictReader(_iter_decoded_lines_from_path(path), delimiter="|")
+    batch: list[dict[str, object]] = []
+    inserted = 0
+
+    for row in reader:
+        normalized = {k.strip().upper(): v.strip() if v else "" for k, v in row.items()}
+        customer_id = (normalized.get("CUSTOMER_ID") or normalized.get("CUST_ID") or "").strip()
+        if not customer_id:
+            continue
+
+        batch.append(
+            {
+                "customer_id": _normalize_empty(customer_id),
+                "credit_score": _normalize_empty(normalized.get("SCORE_V3")),
+                "snapshot_id": snapshot_id,
+            }
+        )
+
+        if len(batch) >= BATCH_SIZE:
+            try:
+                with db.begin_nested():
+                    db.bulk_insert_mappings(MainData, batch)
+                    db.flush()
+                    inserted += len(batch)
+            except Exception:
+                logger.exception("Failed to insert credit_score batch for snapshot_id=%s", snapshot_id)
+            batch.clear()
+
+    if batch:
+        try:
+            with db.begin_nested():
+                db.bulk_insert_mappings(MainData, batch)
+                db.flush()
+                inserted += len(batch)
+        except Exception:
+            logger.exception("Failed to insert final credit_score batch for snapshot_id=%s", snapshot_id)
+        batch.clear()
+
+    return inserted
+
+
+def _insert_personal_data(db: Session, path: Path, snapshot_id: int) -> int:
+    """Read a personal file and insert sparse main_data rows."""
+    reader = csv.DictReader(_iter_decoded_lines_from_path(path), delimiter="|")
+    batch: list[dict[str, object]] = []
+    inserted = 0
+
+    for row in reader:
+        normalized = {k.strip().upper(): v.strip() if v else "" for k, v in row.items()}
+        customer_id = (normalized.get("CUSTOMER_ID") or normalized.get("CUST_ID") or "").strip()
+        if not customer_id:
+            continue
+
+        batch.append(
+            {
+                "customer_id": _normalize_empty(customer_id),
+                "full_name": _normalize_empty(normalized.get("FULL_NAME")),
+                "dob": _normalize_empty(normalized.get("DOB")),
+                "gender": _normalize_empty(normalized.get("GENDER")),
+                "snapshot_id": snapshot_id,
+            }
+        )
+
+        if len(batch) >= BATCH_SIZE:
+            try:
+                with db.begin_nested():
+                    db.bulk_insert_mappings(MainData, batch)
+                    db.flush()
+                    inserted += len(batch)
+            except Exception:
+                logger.exception("Failed to insert personal batch for snapshot_id=%s", snapshot_id)
+            batch.clear()
+
+    if batch:
+        try:
+            with db.begin_nested():
+                db.bulk_insert_mappings(MainData, batch)
+                db.flush()
+                inserted += len(batch)
+        except Exception:
+            logger.exception("Failed to insert final personal batch for snapshot_id=%s", snapshot_id)
+        batch.clear()
+
+    return inserted
+
+
+def _insert_identity_data_standalone(db: Session, path: Path, snapshot_id: int) -> int:
+    """Read an identity-category file and insert into identity_data."""
+    reader = csv.DictReader(_iter_decoded_lines_from_path(path), delimiter="|")
+    batch: list[dict[str, object]] = []
+    inserted = 0
+
+    for row in reader:
+        normalized = {k.strip().upper(): v.strip() if v else "" for k, v in row.items()}
+        customer_id = (normalized.get("CUSTOMER_ID") or normalized.get("CUST_ID") or "").strip()
+        if not customer_id:
+            continue
+
+        batch.append(
+            {
+                "customer_id": _normalize_empty(customer_id),
+                "pan": _normalize_empty(normalized.get("PAN")),
+                "passport": _normalize_empty(normalized.get("PASSPORT")),
+                "voter_id": _normalize_empty(normalized.get("VOTER_ID")),
+                "uid": _normalize_empty(normalized.get("UID")),
+                "ration_card": _normalize_empty(normalized.get("RATION_CARD")),
+                "driving_license": _normalize_empty(normalized.get("DRIVING_LICENSE")),
+                "phone": _normalize_empty(normalized.get("PHONE")),
+                "email": _normalize_empty(normalized.get("EMAIL")),
+                "address": _normalize_empty(normalized.get("ADDRESS")),
+                "pincode": _normalize_empty(normalized.get("PINCODE")),
+                "snapshot_id": snapshot_id,
+            }
+        )
+
+        if len(batch) >= BATCH_SIZE:
+            try:
+                with db.begin_nested():
+                    db.bulk_insert_mappings(IdentityData, batch)
+                    db.flush()
+                    inserted += len(batch)
+            except Exception:
+                logger.exception("Failed to insert identity batch for snapshot_id=%s", snapshot_id)
+            batch.clear()
+
+    if batch:
+        try:
+            with db.begin_nested():
+                db.bulk_insert_mappings(IdentityData, batch)
+                db.flush()
+                inserted += len(batch)
+        except Exception:
+            logger.exception("Failed to insert final identity batch for snapshot_id=%s", snapshot_id)
+        batch.clear()
+
+    return inserted
 
 
 # ---------------------------------------------------------------------------
 # Inquiry data insertion
 # ---------------------------------------------------------------------------
 
-def _insert_inquiry_data(db: Session, path: Path, snapshot_id: int) -> None:
+def _insert_inquiry_data(db: Session, path: Path, snapshot_id: int) -> int:
     """Read an inquiry file and bulk-insert into inquiry_data."""
     reader = csv.DictReader(_iter_decoded_lines_from_path(path), delimiter="|")
     batch: list[dict[str, object]] = []
+    inserted = 0
 
     for row in reader:
         customer_id = _get_customer_id(row)
@@ -526,16 +694,19 @@ def _insert_inquiry_data(db: Session, path: Path, snapshot_id: int) -> None:
                 with db.begin_nested():
                     db.bulk_insert_mappings(InquiryData, batch)
                     db.flush()
+                    inserted += len(batch)
             except Exception:
                 logger.exception("Failed to insert inquiry batch for snapshot_id=%s", snapshot_id)
             batch.clear()
 
-    # Flush remaining
     if batch:
         try:
             with db.begin_nested():
                 db.bulk_insert_mappings(InquiryData, batch)
                 db.flush()
+                inserted += len(batch)
         except Exception:
             logger.exception("Failed to insert final inquiry batch for snapshot_id=%s", snapshot_id)
         batch.clear()
+
+    return inserted
