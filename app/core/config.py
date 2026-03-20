@@ -1,9 +1,17 @@
 """Application configuration using Pydantic Settings."""
 
+from enum import Enum
 from functools import lru_cache
 
 from pydantic import ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class EnvMode(str, Enum):
+    """Application environment mode."""
+
+    dev = "dev"
+    prod = "prod"
 
 
 class Settings(BaseSettings):
@@ -12,16 +20,17 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", case_sensitive=True)
 
     # Application
-    APP_NAME: str = "RBAC Auth API"
+    APP_NAME: str = "CIBIL Dashboard"
     DEBUG: bool = False
+    ENV: EnvMode = EnvMode.dev
 
     # CORS (comma-separated origins, e.g. "http://localhost:3000,https://app.example.com")
     CORS_ORIGINS: list[str] = ["http://localhost:3000"]
 
-    # Password reset (link base for reset flow; token appended as ?token=...)
+    # Password reset — frontend page URL; token appended as ?token=...
     RESET_LINK_BASE_URL: str = "http://localhost:3000/reset-password"
 
-    # SMTP (optional; when unset, password reset email is skipped)
+    # SMTP (required when ENV=prod; ignored in dev mode where reset link is returned in API response)
     SMTP_HOST: str | None = None
     SMTP_PORT: int = 587
     SMTP_USERNAME: str | None = None
