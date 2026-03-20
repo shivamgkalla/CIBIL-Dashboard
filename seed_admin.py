@@ -26,15 +26,15 @@ def seed(db: Session) -> None:
         print("Skipping admin seed — set ADMIN_USERNAME, ADMIN_EMAIL, and ADMIN_PASSWORD env vars to create one.")
         return
 
-    existing = (
-        db.query(User)
-        .filter((User.role == UserRole.ADMIN))
-        .first()
-    )
+    # Check by email first (most specific), then fall back to any admin by role.
+    existing = db.query(User).filter(User.email == email).first()
+    if existing is None:
+        existing = db.query(User).filter(User.role == UserRole.ADMIN).first()
     if existing:
         existing.username = username
         existing.email = email
         existing.hashed_password = hash_password(password)
+        existing.role = UserRole.ADMIN
         db.commit()
         print(f"Admin synced: {existing.username} ({existing.email})")
         return
