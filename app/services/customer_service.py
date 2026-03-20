@@ -28,9 +28,11 @@ from app.schemas.customer_timeline_schema import (
 )
 from app.utils.masking import (
     mask_driving_license,
+    mask_email,
     mask_generic,
     mask_pan,
     mask_passport,
+    mask_phone,
 )
 
 log = logging.getLogger(__name__)
@@ -83,6 +85,16 @@ def _apply_identity_masking(obj: object) -> None:
             "ration_card",
             mask_generic(ration_card, keep_start=2, keep_end=2),
         )
+    except Exception:
+        pass
+    try:
+        phone = getattr(obj, "phone", None)
+        setattr(obj, "phone", mask_phone(phone))
+    except Exception:
+        pass
+    try:
+        email = getattr(obj, "email", None)
+        setattr(obj, "email", mask_email(email))
     except Exception:
         pass
 
@@ -142,6 +154,8 @@ def _get_latest_non_null_identity(
                 identity_model.voter_id,
                 identity_model.driving_license,
                 identity_model.ration_card,
+                identity_model.phone,
+                identity_model.email,
             ]
         ):
             return identity_model
@@ -346,6 +360,8 @@ def _build_identity_analysis(
         "voter_id": _norm_str(latest_identity.voter_id),
         "driving_license": _norm_str(latest_identity.driving_license),
         "ration_card": _norm_str(latest_identity.ration_card),
+        "phone": _norm_str(latest_identity.phone),
+        "email": _norm_str(latest_identity.email),
     }
     identity_types_present = sorted([k for k, v in identity_fields.items() if v])
     has_strong_identity = bool(
@@ -487,6 +503,7 @@ def _apply_customer_search_filters(
     *,
     customer_id: str | None,
     pan: str | None,
+    phone: str | None,
     acct_key: str | None,
     bank_type: str | None,
     occup_status_cd: str | None,
@@ -500,6 +517,8 @@ def _apply_customer_search_filters(
         query = query.filter(MainData.customer_id == customer_id)
     if pan:
         query = query.filter(IdentityData.pan == pan)
+    if phone:
+        query = query.filter(IdentityData.phone == phone)
     if acct_key:
         query = query.filter(MainData.acct_key == acct_key)
     if bank_type:
@@ -701,6 +720,7 @@ def search_customers(
     db: Session,
     customer_id: str | None,
     pan: str | None,
+    phone: str | None,
     acct_key: str | None,
     bank_type: str | None,
     occup_status_cd: str | None,
@@ -725,11 +745,14 @@ def search_customers(
     query = (
         db.query(
             MainData.customer_id,
+            MainData.full_name,
             MainData.acct_key,
             MainData.bank_type,
             MainData.income,
+            MainData.credit_score,
             MainData.rpt_dt,
             IdentityData.pan,
+            IdentityData.phone,
         )
         .outerjoin(
             IdentityData,
@@ -744,6 +767,7 @@ def search_customers(
         query,
         customer_id=customer_id,
         pan=pan,
+        phone=phone,
         acct_key=acct_key,
         bank_type=bank_type,
         occup_status_cd=occup_status_cd,
@@ -771,11 +795,14 @@ def search_customers(
     data = [
         CustomerSearchResponse(
             customer_id=row[0],
-            acct_key=row[1],
-            bank_type=row[2],
-            income=row[3],
-            rpt_dt=row[4],
-            pan=mask_pan(row[5]),
+            full_name=row[1],
+            acct_key=row[2],
+            bank_type=row[3],
+            income=row[4],
+            credit_score=row[5],
+            rpt_dt=row[6],
+            pan=mask_pan(row[7]),
+            phone=mask_phone(row[8]),
         )
         for row in rows
     ]
@@ -856,12 +883,16 @@ def get_customer_timeline(db: Session, customer_id: str) -> CustomerTimelineResp
             MainData.income,
             MainData.bank_type,
             MainData.occup_status_cd,
+            MainData.credit_score,
+            MainData.full_name,
             IdentityData.pan,
             IdentityData.passport,
             IdentityData.voter_id,
             IdentityData.uid,
             IdentityData.driving_license,
             IdentityData.ration_card,
+            IdentityData.phone,
+            IdentityData.email,
         )
         .join(UploadHistory, MainData.snapshot_id == UploadHistory.id)
         .outerjoin(
@@ -883,12 +914,16 @@ def get_customer_timeline(db: Session, customer_id: str) -> CustomerTimelineResp
             income=row[3],
             bank_type=row[4],
             occup_status_cd=row[5],
-            pan=row[6],
-            passport=row[7],
-            voter_id=row[8],
-            uid=row[9],
-            driving_license=row[10],
-            ration_card=row[11],
+            credit_score=row[6],
+            full_name=row[7],
+            pan=row[8],
+            passport=row[9],
+            voter_id=row[10],
+            uid=row[11],
+            driving_license=row[12],
+            ration_card=row[13],
+            phone=row[14],
+            email=row[15],
         )
         # After validation: mask sensitive identity fields before returning response.
         _apply_identity_masking(entry)
@@ -901,6 +936,7 @@ def iter_customers_for_export(
     db: Session,
     customer_id: str | None,
     pan: str | None,
+    phone: str | None,
     acct_key: str | None,
     bank_type: str | None,
     occup_status_cd: str | None,
@@ -932,6 +968,7 @@ def iter_customers_for_export(
         query,
         customer_id=customer_id,
         pan=pan,
+        phone=phone,
         acct_key=acct_key,
         bank_type=bank_type,
         occup_status_cd=occup_status_cd,
@@ -944,7 +981,6 @@ def iter_customers_for_export(
     for main_row, identity_row in query.order_by(MainData.customer_id).yield_per(1000):
         # Mask identity fields before yielding any identity data out of the service.
         if identity_row is not None:
-            # Use the same masking helpers as other services.
             identity_row.pan = mask_pan(identity_row.pan)
             identity_row.passport = mask_passport(identity_row.passport)
             identity_row.voter_id = mask_generic(
@@ -959,6 +995,8 @@ def iter_customers_for_export(
             identity_row.ration_card = mask_generic(
                 identity_row.ration_card, keep_start=2, keep_end=2
             )
+            identity_row.phone = mask_phone(identity_row.phone)
+            identity_row.email = mask_email(identity_row.email)
         yield main_row, identity_row
 
 
@@ -966,6 +1004,7 @@ def stream_customers_csv(
     db: Session,
     customer_id: str | None,
     pan: str | None,
+    phone: str | None,
     acct_key: str | None,
     bank_type: str | None,
     occup_status_cd: str | None,
@@ -980,12 +1019,16 @@ def stream_customers_csv(
 
     fieldnames = [
         "customer_id",
+        "full_name",
         "acct_key",
         "bank_type",
         "income",
         "income_freq",
+        "credit_score",
         "occup_status_cd",
         "rpt_dt",
+        "dob",
+        "gender",
         "snapshot_id",
         "pan",
         "passport",
@@ -993,6 +1036,10 @@ def stream_customers_csv(
         "uid",
         "ration_card",
         "driving_license",
+        "phone",
+        "email",
+        "address",
+        "pincode",
     ]
 
     buffer = io.StringIO()
@@ -1008,6 +1055,7 @@ def stream_customers_csv(
         db=db,
         customer_id=customer_id,
         pan=pan,
+        phone=phone,
         acct_key=acct_key,
         bank_type=bank_type,
         occup_status_cd=occup_status_cd,
@@ -1018,12 +1066,16 @@ def stream_customers_csv(
     ):
         row = {
             "customer_id": main_row.customer_id,
+            "full_name": main_row.full_name,
             "acct_key": main_row.acct_key,
             "bank_type": main_row.bank_type,
             "income": main_row.income,
             "income_freq": main_row.income_freq,
+            "credit_score": main_row.credit_score,
             "occup_status_cd": main_row.occup_status_cd,
             "rpt_dt": main_row.rpt_dt,
+            "dob": main_row.dob,
+            "gender": main_row.gender,
             "snapshot_id": main_row.snapshot_id,
             "pan": getattr(identity_row, "pan", None) if identity_row else None,
             "passport": getattr(identity_row, "passport", None)
@@ -1037,6 +1089,14 @@ def stream_customers_csv(
             if identity_row
             else None,
             "driving_license": getattr(identity_row, "driving_license", None)
+            if identity_row
+            else None,
+            "phone": getattr(identity_row, "phone", None) if identity_row else None,
+            "email": getattr(identity_row, "email", None) if identity_row else None,
+            "address": getattr(identity_row, "address", None)
+            if identity_row
+            else None,
+            "pincode": getattr(identity_row, "pincode", None)
             if identity_row
             else None,
         }
@@ -1068,9 +1128,13 @@ def get_customer_report_data(db: Session, customer_id: str) -> dict:
 
     overview = {
         "customer_id": latest_main.customer_id,
+        "full_name": latest_main.full_name,
         "primary_acct_key": latest_main.acct_key,
         "bank_type": latest_main.bank_type,
         "income": latest_main.income,
+        "credit_score": latest_main.credit_score,
+        "dob": latest_main.dob,
+        "gender": latest_main.gender,
         "rpt_dt": latest_main.rpt_dt,
     }
 
@@ -1086,6 +1150,10 @@ def get_customer_report_data(db: Session, customer_id: str) -> dict:
             "voter_id": latest_identity.voter_id,
             "driving_license": latest_identity.driving_license,
             "ration_card": latest_identity.ration_card,
+            "phone": latest_identity.phone,
+            "email": latest_identity.email,
+            "address": latest_identity.address,
+            "pincode": latest_identity.pincode,
         }
 
     accounts: list[dict[str, object]] = []
@@ -1097,6 +1165,7 @@ def get_customer_report_data(db: Session, customer_id: str) -> dict:
                 "bank_type": md.bank_type,
                 "income": md.income,
                 "income_freq": md.income_freq,
+                "credit_score": md.credit_score,
                 "occup_status_cd": md.occup_status_cd,
                 "rpt_dt": md.rpt_dt,
                 "snapshot_id": md.snapshot_id,
@@ -1112,6 +1181,7 @@ def get_customer_report_data(db: Session, customer_id: str) -> dict:
                 "rpt_dt": entry.rpt_dt,
                 "income": entry.income,
                 "bank_type": entry.bank_type,
+                "credit_score": entry.credit_score,
                 "occup_status_cd": entry.occup_status_cd,
                 "pan": entry.pan,
                 "passport": entry.passport,
@@ -1119,6 +1189,8 @@ def get_customer_report_data(db: Session, customer_id: str) -> dict:
                 "uid": entry.uid,
                 "driving_license": entry.driving_license,
                 "ration_card": entry.ration_card,
+                "phone": entry.phone,
+                "email": entry.email,
             }
         )
 

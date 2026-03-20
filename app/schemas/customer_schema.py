@@ -13,6 +13,10 @@ class CustomerSearchResponse(BaseModel):
         description="Customer identifier from main data.",
         examples=["CUST123"],
     )
+    full_name: str | None = Field(
+        None,
+        description="Full name of the customer.",
+    )
     acct_key: str | None = Field(
         None,
         description="Account key for the facility.",
@@ -28,6 +32,10 @@ class CustomerSearchResponse(BaseModel):
         description="Reported income string from the bureau file.",
         examples=["75000"],
     )
+    credit_score: str | None = Field(
+        None,
+        description="Credit score from bureau data.",
+    )
     rpt_dt: str | None = Field(
         None,
         description="Report date from the CIBIL snapshot.",
@@ -35,8 +43,12 @@ class CustomerSearchResponse(BaseModel):
     )
     pan: str | None = Field(
         None,
-        description="Permanent Account Number from identity data.",
-        examples=["ABCDE1234F"],
+        description="Permanent Account Number from identity data (masked).",
+        examples=["ABCDE****F"],
+    )
+    phone: str | None = Field(
+        None,
+        description="Phone number from identity data (masked).",
     )
 
 
@@ -51,6 +63,10 @@ class MainDataResponse(BaseModel):
     occup_status_cd: str | None = None
     rpt_dt: str | None = None
     bank_type: str | None = None
+    credit_score: str | None = None
+    full_name: str | None = None
+    dob: str | None = None
+    gender: str | None = None
     snapshot_id: int | None = None
     created_at: datetime
 
@@ -68,6 +84,10 @@ class IdentityDataResponse(BaseModel):
     uid: str | None = None
     ration_card: str | None = None
     driving_license: str | None = None
+    phone: str | None = None
+    email: str | None = None
+    address: str | None = None
+    pincode: str | None = None
     snapshot_id: int | None = None
     created_at: datetime
 

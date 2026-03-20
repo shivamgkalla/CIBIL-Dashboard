@@ -49,6 +49,10 @@ def search_customers(
         default=None,
         description="Filter by PAN from identity data.",
     ),
+    phone: str | None = Query(
+        default=None,
+        description="Filter by phone number from identity data.",
+    ),
     acct_key: str | None = Query(
         default=None,
         description="Filter by account key.",
@@ -112,6 +116,7 @@ def search_customers(
         db=db,
         customer_id=customer_id,
         pan=pan,
+        phone=phone,
         acct_key=acct_key,
         bank_type=bank_type,
         occup_status_cd=occup_status_cd,
@@ -250,6 +255,10 @@ def export_customers_csv(
         default=None,
         description="Filter by PAN from identity data.",
     ),
+    phone: str | None = Query(
+        default=None,
+        description="Filter by phone number from identity data.",
+    ),
     acct_key: str | None = Query(
         default=None,
         description="Filter by account key.",
@@ -297,6 +306,7 @@ def export_customers_csv(
             db=db,
             customer_id=customer_id,
             pan=pan,
+            phone=phone,
             acct_key=acct_key,
             bank_type=bank_type,
             occup_status_cd=occup_status_cd,

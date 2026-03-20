@@ -92,3 +92,30 @@ def mask_driving_license(value: str | None) -> str | None:
     except Exception:
         return None if value is None else mask_generic(str(value), keep_start=2, keep_end=4)
 
+
+def mask_phone(value: str | None) -> str | None:
+    """Mask phone number: keep only last 4 digits (******1234)."""
+
+    try:
+        return mask_generic(value, keep_start=0, keep_end=4)
+    except Exception:
+        return None if value is None else mask_generic(str(value), keep_start=0, keep_end=4)
+
+
+def mask_email(value: str | None) -> str | None:
+    """Mask email: keep first 2 chars of local part + full domain (ab****@example.com)."""
+
+    try:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            return None
+        raw = value.strip()
+        if not raw or "@" not in raw:
+            return mask_generic(raw, keep_start=2, keep_end=2) if raw else value
+        local, domain = raw.rsplit("@", 1)
+        masked_local = mask_generic(local, keep_start=2, keep_end=0) or "**"
+        return f"{masked_local}@{domain}"
+    except Exception:
+        return None
+

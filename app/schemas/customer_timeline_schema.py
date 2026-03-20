@@ -34,6 +34,10 @@ class CustomerTimelineEntry(BaseModel):
         examples=["SAL"],
     )
 
+    # Personal data (from main data enrichment)
+    credit_score: str | None = Field(None, description="Credit score from bureau data.")
+    full_name: str | None = Field(None, description="Full name of the customer.")
+
     # Identity data (optional; may not exist for every snapshot)
     pan: str | None = Field(None, description="Permanent Account Number.", examples=["ABCDE1234F"])
     passport: str | None = Field(None, description="Passport number.")
@@ -41,6 +45,8 @@ class CustomerTimelineEntry(BaseModel):
     uid: str | None = Field(None, description="UID identifier when present.")
     driving_license: str | None = Field(None, description="Driving license number.")
     ration_card: str | None = Field(None, description="Ration card identifier.")
+    phone: str | None = Field(None, description="Phone number (masked).")
+    email: str | None = Field(None, description="Email address (masked).")
 
 
 class CustomerTimelineResponse(BaseModel):

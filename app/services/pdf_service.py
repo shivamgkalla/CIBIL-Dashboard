@@ -126,9 +126,13 @@ def generate_customer_pdf(customer_data: dict[str, Any]) -> bytes:
     overview_table = _build_key_value_table(
         {
             "Customer ID:": overview.get("customer_id"),
+            "Full Name:": overview.get("full_name"),
             "Primary Account Key:": overview.get("primary_acct_key"),
             "Latest Bank Type:": overview.get("bank_type"),
             "Latest Income:": overview.get("income"),
+            "Credit Score:": overview.get("credit_score"),
+            "Date of Birth:": overview.get("dob"),
+            "Gender:": overview.get("gender"),
             "Latest Report Date:": overview.get("rpt_dt"),
         },
         label_width=label_width,
@@ -147,9 +151,10 @@ def generate_customer_pdf(customer_data: dict[str, Any]) -> bytes:
                 "Bank Type",
                 "Income",
                 "Income Freq",
+                "Score",
                 "Occup Status",
                 "Report Date",
-                "Snapshot ID",
+                "Snapshot",
             ]
         ]
         for acc in accounts:
@@ -159,6 +164,7 @@ def generate_customer_pdf(customer_data: dict[str, Any]) -> bytes:
                     str(acc.get("bank_type") or ""),
                     str(acc.get("income") or ""),
                     str(acc.get("income_freq") or ""),
+                    str(acc.get("credit_score") or ""),
                     str(acc.get("occup_status_cd") or ""),
                     str(acc.get("rpt_dt") or ""),
                     str(acc.get("snapshot_id") or ""),
@@ -169,7 +175,7 @@ def generate_customer_pdf(customer_data: dict[str, Any]) -> bytes:
             account_rows,
             hAlign="LEFT",
             repeatRows=1,
-            colWidths=[width / 7] * 7,
+            colWidths=[width / 8] * 8,
         )
         account_table.setStyle(
             TableStyle(
@@ -205,6 +211,10 @@ def generate_customer_pdf(customer_data: dict[str, Any]) -> bytes:
             "Voter ID:": identity.get("voter_id"),
             "Driving License:": identity.get("driving_license"),
             "Ration Card:": identity.get("ration_card"),
+            "Phone:": identity.get("phone"),
+            "Email:": identity.get("email"),
+            "Address:": identity.get("address"),
+            "Pincode:": identity.get("pincode"),
         },
         label_width=label_width,
         value_width=value_width,
@@ -218,9 +228,10 @@ def generate_customer_pdf(customer_data: dict[str, Any]) -> bytes:
         story.append(_build_section_title("Timeline"))
         timeline_rows: list[list[str]] = [
             [
-                "Snapshot ID",
+                "Snapshot",
                 "Report Date",
                 "Income",
+                "Score",
                 "Bank Type",
             ]
         ]
@@ -230,6 +241,7 @@ def generate_customer_pdf(customer_data: dict[str, Any]) -> bytes:
                     str(entry.get("snapshot_id") or ""),
                     str(entry.get("rpt_dt") or ""),
                     str(entry.get("income") or ""),
+                    str(entry.get("credit_score") or ""),
                     str(entry.get("bank_type") or ""),
                 ]
             )
@@ -238,7 +250,7 @@ def generate_customer_pdf(customer_data: dict[str, Any]) -> bytes:
             timeline_rows,
             hAlign="LEFT",
             repeatRows=1,
-            colWidths=[width / 4] * 4,
+            colWidths=[width / 5] * 5,
         )
         timeline_table.setStyle(
             TableStyle(
