@@ -53,6 +53,10 @@ Thumbs.db
 # ---- Cursor (optional but recommended) ----
 .cursor/
 
+# ---- Test data / scripts ----
+scripts/
+test_data/
+
 # ---- Local data exports / scratch files ----
 identity_data.txt
 main_data.txt
