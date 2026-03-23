@@ -27,8 +27,10 @@ python-dotenv==1.2.2
 python-jose==3.5.0
 python-multipart==0.0.22
 PyYAML==6.0.3
+reportlab==4.2.5
 rsa==4.9.1
 six==1.17.0
+slowapi==0.1.9
 SQLAlchemy==2.0.48
 starlette==0.52.1
 typing-inspection==0.4.2
@@ -37,5 +39,3 @@ uvicorn==0.41.0
 uvloop==0.22.1
 watchfiles==1.1.1
 websockets==16.0
-reportlab==4.2.5
-slowapi==0.1.9

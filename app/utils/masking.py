@@ -59,47 +59,27 @@ def mask_generic(value: str | None, *, keep_start: int = 0, keep_end: int = 4, m
 
 def mask_pan(value: str | None) -> str | None:
     """Mask PAN, typically 10 chars: keep first 5 and last 1 (ABCDE****F)."""
-
-    try:
-        return mask_generic(value, keep_start=5, keep_end=1)
-    except Exception:
-        return None if value is None else mask_generic(str(value), keep_start=5, keep_end=1)
+    return mask_generic(value, keep_start=5, keep_end=1)
 
 
 def mask_aadhaar(value: str | None) -> str | None:
     """Mask UID/Aadhaar: keep only last 4 (********1234)."""
-
-    try:
-        return mask_generic(value, keep_start=0, keep_end=4)
-    except Exception:
-        return None if value is None else mask_generic(str(value), keep_start=0, keep_end=4)
+    return mask_generic(value, keep_start=0, keep_end=4)
 
 
 def mask_passport(value: str | None) -> str | None:
     """Mask passport number: keep first 2 and last 2."""
-
-    try:
-        return mask_generic(value, keep_start=2, keep_end=2)
-    except Exception:
-        return None if value is None else mask_generic(str(value), keep_start=2, keep_end=2)
+    return mask_generic(value, keep_start=2, keep_end=2)
 
 
 def mask_driving_license(value: str | None) -> str | None:
     """Mask driving license number: keep first 2 and last 4."""
-
-    try:
-        return mask_generic(value, keep_start=2, keep_end=4)
-    except Exception:
-        return None if value is None else mask_generic(str(value), keep_start=2, keep_end=4)
+    return mask_generic(value, keep_start=2, keep_end=4)
 
 
 def mask_phone(value: str | None) -> str | None:
     """Mask phone number: keep only last 4 digits (******1234)."""
-
-    try:
-        return mask_generic(value, keep_start=0, keep_end=4)
-    except Exception:
-        return None if value is None else mask_generic(str(value), keep_start=0, keep_end=4)
+    return mask_generic(value, keep_start=0, keep_end=4)
 
 
 def mask_email(value: str | None) -> str | None:

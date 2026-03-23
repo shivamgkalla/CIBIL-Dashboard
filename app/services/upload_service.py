@@ -30,7 +30,6 @@ import logging
 import tempfile
 import shutil
 from pathlib import Path
-from typing import List
 
 from fastapi import UploadFile
 from sqlalchemy.orm import Session
@@ -203,7 +202,7 @@ def _merge_lookups(*lookups: dict[str, dict[str, str]]) -> dict[str, dict[str, s
 def create_upload_record(
     db: Session,
     *,
-    files: List[UploadFile],
+    files: list[UploadFile],
     uploaded_by_user_id: int | None,
 ) -> tuple[int, list[Path]]:
     """Create an UploadHistory row and save files to temp.

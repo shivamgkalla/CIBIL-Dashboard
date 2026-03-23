@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.security import create_access_token, hash_password, verify_password
 from app.models.user_model import User, UserRole
-from app.schemas.user_schema import RoleEnum, UserRegister, UserResponse
+from app.schemas.user_schema import RoleEnum, UserRegister
 
 settings = get_settings()
 

@@ -10,20 +10,22 @@ from slowapi.errors import RateLimitExceeded
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.db.database import get_db, SessionLocal
-
-from app.core.config import get_settings
 from app.core.rate_limit import limiter
+from app.db.database import get_db, SessionLocal
 from app.models.identity_data_model import IdentityData
 from app.models.inquiry_data_model import InquiryData
 from app.models.main_data_model import MainData
 from app.models.upload_error_model import UploadError
 from app.models.upload_history_model import UploadHistory, UploadStatus
-from app.routers import auth_router, admin_router, user_router
-from app.routers.upload_router import router as upload_router
-from app.routers.customer_router import router as customer_router
-from app.routers.saved_filter_router import router as saved_filter_router
-from app.routers.chart_router import router as chart_router
+from app.routers import (
+    admin_router,
+    auth_router,
+    chart_router,
+    customer_router,
+    saved_filter_router,
+    upload_router,
+    user_router,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +76,6 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-settings = get_settings()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -87,10 +88,10 @@ app.add_middleware(
 app.include_router(auth_router.router)
 app.include_router(admin_router.router)
 app.include_router(user_router.router)
-app.include_router(upload_router)
-app.include_router(customer_router)
-app.include_router(saved_filter_router)
-app.include_router(chart_router)
+app.include_router(upload_router.router)
+app.include_router(customer_router.router)
+app.include_router(saved_filter_router.router)
+app.include_router(chart_router.router)
 
 
 @app.get("/", tags=["Health"])

@@ -351,7 +351,6 @@ def download_customer_report_pdf(
     )
 
 
-
 @router.get(
     "/uploads/history",
     response_model=list[UploadHistoryResponse],
