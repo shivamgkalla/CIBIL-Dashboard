@@ -287,7 +287,6 @@ alembic/
 ├── versions/                  # 16 migration files
 ├── env.py
 └── script.py.mako
-docs/                          # Detailed engineering documentation (12 files)
 seed_admin.py                  # Initial admin user seeder (idempotent)
 render.yaml                    # Render deployment blueprint
 ```
@@ -345,23 +344,3 @@ On boot, the app automatically:
 - Connection recycle: 1800 seconds (30 min)
 - Pre-ping enabled for stale connection detection
 
----
-
-## Detailed Documentation
-
-See the [docs/](docs/) folder for in-depth engineering documentation:
-
-| Document | Contents |
-|----------|----------|
-| [Architecture Overview](docs/ARCHITECTURE_OVERVIEW.md) | Layered architecture, request flow |
-| [Database Schema](docs/DATABASE_SCHEMA.md) | Full table definitions, relationships |
-| [Data Flow](docs/DATA_FLOW.md) | Upload → processing → query pipeline |
-| [API Documentation](docs/API_DOCUMENTATION.md) | Detailed endpoint specifications |
-| [Service Layer](docs/SERVICE_LAYER_EXPLAINED.md) | Business logic patterns |
-| [Analytics Engine](docs/ANALYTICS_ENGINE.md) | Dashboard, charts, summary analytics |
-| [PDF Report Flow](docs/PDF_REPORT_FLOW.md) | ReportLab PDF generation |
-| [Security & Masking](docs/SECURITY_AND_MASKING.md) | JWT, RBAC, PII masking |
-| [Performance](docs/PERFORMANCE_AND_OPTIMIZATION.md) | Indexing, caching, batch processing |
-| [Edge Cases](docs/EDGE_CASES_AND_HANDLING.md) | Null handling, error recovery |
-| [Logging](docs/LOGGING_AND_OBSERVABILITY.md) | Structured logging patterns |
-| [Future Improvements](docs/FUTURE_IMPROVEMENTS.md) | Planned enhancements |
